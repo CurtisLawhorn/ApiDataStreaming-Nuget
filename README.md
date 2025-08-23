@@ -1,2 +1,2 @@
-# ApiDataStreaming-Nuget
+# API Data Streaming Middleware Library
 Middleware library for streaming API request/response data to Amazon Kinesis.
