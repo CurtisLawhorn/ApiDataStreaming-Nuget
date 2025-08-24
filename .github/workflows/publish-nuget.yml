@@ -1,0 +1,71 @@
+name: Build & Publish NuGet Package to AWS CodeArtifact
+
+on:
+  push:
+    branches:
+      - main # runs on every push to main
+  workflow_dispatch: # runs manually
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write # Required for OIDC
+      contents: read
+
+    steps:
+      # 1️⃣ Checkout the repository
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2️⃣ Setup .NET SDK
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      # 3️⃣ Restore dependencies
+      - name: Restore
+        run: dotnet restore
+
+      # 4️⃣ Build project
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      # 5️⃣ Run tests
+      - name: Test
+        run: dotnet test --configuration Release --no-build --verbosity normal
+
+      # 6️⃣ Pack NuGet package
+      - name: Pack NuGet
+        run: dotnet pack --configuration Release --no-build -o ./artifacts
+
+      # 7️⃣ Configure AWS credentials using OIDC role
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::689502032294:role/GitHubRoleForCodeArtifact
+          aws-region: us-east-2
+
+      # 8️⃣ Authenticate to CodeArtifact (get short-lived token and configure NuGet source)
+      - name: Authenticate to CodeArtifact
+        run: |
+          export CODEARTIFACT_AUTH_TOKEN=$(aws codeartifact get-authorization-token \
+            --domain curtislawhorn-artifacts \
+            --domain-owner 689502032294 \
+            --query authorizationToken \
+            --output text)
+
+          # Add NuGet source using the token
+          dotnet nuget remove source aws-codeartifact || true
+          dotnet nuget add source \
+            --name aws-codeartifact \
+            --username aws \
+            --password $CODEARTIFACT_AUTH_TOKEN \
+            --store-password-in-clear-text \
+            "https://curtislawhorn-artifacts-689502032294.d.codeartifact.us-east-2.amazonaws.com/nuget/CurtisLawhorn/v3/index.json"
+
+      # 9️⃣ Push NuGet package to CodeArtifact
+      - name: Push package to CodeArtifact
+        run: dotnet nuget push ./artifacts/*.nupkg --source aws-codeartifact --skip-duplicate
