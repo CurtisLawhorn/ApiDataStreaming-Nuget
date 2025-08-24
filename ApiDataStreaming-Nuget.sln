@@ -1,0 +1,47 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "examples", "examples", "{B36A84DF-456D-A817-6EDD-3EC3E7F6E11F}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72D-47B6-A68D-7590B98EB39B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CurtisLawhorn.ApiDataStreaming.Tests", "tests\CurtisLawhorn.ApiDataStreaming.Tests\CurtisLawhorn.ApiDataStreaming.Tests.csproj", "{86386587-8CCD-366C-CC5B-9DBE55D15BCD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WeatherForecastAPI", "examples\WeatherForecastAPI\WeatherForecastAPI.csproj", "{6D391F73-4192-A158-1B15-945027D17488}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CurtisLawhorn.ApiDataStreaming", "src\CurtisLawhorn.ApiDataStreaming\CurtisLawhorn.ApiDataStreaming.csproj", "{2D1283B8-C263-7B29-6E70-133507321FFF}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{86386587-8CCD-366C-CC5B-9DBE55D15BCD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{86386587-8CCD-366C-CC5B-9DBE55D15BCD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{86386587-8CCD-366C-CC5B-9DBE55D15BCD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{86386587-8CCD-366C-CC5B-9DBE55D15BCD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6D391F73-4192-A158-1B15-945027D17488}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6D391F73-4192-A158-1B15-945027D17488}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6D391F73-4192-A158-1B15-945027D17488}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6D391F73-4192-A158-1B15-945027D17488}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2D1283B8-C263-7B29-6E70-133507321FFF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2D1283B8-C263-7B29-6E70-133507321FFF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2D1283B8-C263-7B29-6E70-133507321FFF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2D1283B8-C263-7B29-6E70-133507321FFF}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{86386587-8CCD-366C-CC5B-9DBE55D15BCD} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{6D391F73-4192-A158-1B15-945027D17488} = {B36A84DF-456D-A817-6EDD-3EC3E7F6E11F}
+		{2D1283B8-C263-7B29-6E70-133507321FFF} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {212638EF-0AEC-4F96-9CC8-1E06A4310B3B}
+	EndGlobalSection
+EndGlobal
