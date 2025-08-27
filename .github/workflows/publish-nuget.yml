@@ -11,8 +11,8 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      id-token: write # Required for OIDC
-      contents: read
+      contents: write # allows creating releases
+      id-token: write # needed for AWS OIDC
 
     steps:
       # 1️⃣ Checkout the repository
