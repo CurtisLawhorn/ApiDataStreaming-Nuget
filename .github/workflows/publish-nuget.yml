@@ -37,7 +37,7 @@ jobs:
           fi
 
           # Extract version from .csproj
-          csproj_version=$(grep -oPm1 "(?<=<Version>)[^<]+" "$csproj_file")
+          csproj_version=$(grep -oPm1 "(?<=<PackageVersion>)[^<]+" "$csproj_file")
 
           # Remove leading "v" from tag
           tag_version="${GITHUB_REF_NAME#v}"
