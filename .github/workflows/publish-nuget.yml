@@ -6,6 +6,9 @@ on:
       - 'v*' # runs only when tags like v1.0.1, v2.1.3 are pushed
   workflow_dispatch: # runs manually
 
+env:
+  CSProj_File: ${{ vars.CSProj_File }} # repo-level variable
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -26,18 +29,16 @@ jobs:
           dotnet-version: '9.0.x'
 
       # 🔎 Verify tag matches .csproj version
-      - name: Verify tag matches version in MyProject.csproj
+      - name: Verify tag matches version in .csproj
         shell: bash
         run: |
-          csproj_file="src/CurtisLawhorn.ApiDataStreaming/CurtisLawhorn.ApiDataStreaming.csproj"
-
-          if [ ! -f "$csproj_file" ]; then
-            echo "❌ $csproj_file not found!"
+          if [ ! -f "$CSProj_File" ]; then
+            echo "❌ $CSProj_File not found!"
             exit 1
           fi
 
-          # Extract version from .csproj
-          csproj_version=$(grep -oPm1 "(?<=<PackageVersion>)[^<]+" "$csproj_file")
+          # Extract version from .csproj (<PackageVersion> or <Version>)
+          csproj_version=$(grep -oPm1 "(?<=<(PackageVersion|Version)>)[^<]+" "$CSProj_File")
 
           # Remove leading "v" from tag
           tag_version="${GITHUB_REF_NAME#v}"
@@ -46,7 +47,7 @@ jobs:
           echo "Project version: $csproj_version"
 
           if [ "$tag_version" != "$csproj_version" ]; then
-            echo "❌ Version mismatch! Tag ($tag_version) does not match $csproj_file ($csproj_version)"
+            echo "❌ Version mismatch! Tag ($tag_version) does not match $CSProj_File ($csproj_version)"
             exit 1
           fi
 
