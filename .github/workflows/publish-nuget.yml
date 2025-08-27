@@ -27,11 +27,16 @@ jobs:
 
       # 🔎 Verify tag matches .csproj version
       - name: Verify tag matches .csproj version
+        shell: bash
         run: |
-          # Find the first <Version> element in the .csproj
-          csproj_version=$(grep -oPm1 "(?<=<Version>)[^<]+" **/*.csproj)
+          # Find the first .csproj in the repo
+          csproj_file=$(find . -name "*.csproj" | head -n 1)
+          echo "Using csproj file: $csproj_file"
 
-          # Remove leading 'v' from the Git tag (e.g., v1.0.0 -> 1.0.0)
+          # Extract version from the .csproj
+          csproj_version=$(grep -oPm1 "(?<=<Version>)[^<]+" "$csproj_file")
+
+          # Remove leading 'v' from the Git tag
           tag_version="${GITHUB_REF_NAME#v}"
 
           echo "Tag version: $tag_version"
