@@ -84,8 +84,8 @@ jobs:
       - name: Authenticate to CodeArtifact
         run: |
           export CODEARTIFACT_AUTH_TOKEN=$(aws codeartifact get-authorization-token \
-            --domain $AWS_CodeArtifact_Domain \
-            --domain-owner $AWS_CODEARTFIACT_DOMAINOWNER \
+            --domain "$AWS_CodeArtifact_Domain" \
+            --domain-owner "$AWS_CodeArtifact_DomainOwner" \
             --query authorizationToken \
             --output text)
 
