@@ -26,24 +26,27 @@ jobs:
           dotnet-version: '9.0.x'
 
       # 🔎 Verify tag matches .csproj version
-      - name: Verify tag matches .csproj version
+      - name: Verify tag matches version in MyProject.csproj
         shell: bash
         run: |
-          # Find the first .csproj in the repo
-          csproj_file=$(find . -name "*.csproj" | head -n 1)
-          echo "Using csproj file: $csproj_file"
+          csproj_file="src/CurtisLawhorn.ApiDataStreaming/CurtisLawhorn.ApiDataStreaming.csproj"
 
-          # Extract version from the .csproj
+          if [ ! -f "$csproj_file" ]; then
+            echo "❌ $csproj_file not found!"
+            exit 1
+          fi
+
+          # Extract version from .csproj
           csproj_version=$(grep -oPm1 "(?<=<Version>)[^<]+" "$csproj_file")
 
-          # Remove leading 'v' from the Git tag
+          # Remove leading "v" from tag
           tag_version="${GITHUB_REF_NAME#v}"
 
           echo "Tag version: $tag_version"
           echo "Project version: $csproj_version"
 
           if [ "$tag_version" != "$csproj_version" ]; then
-            echo "❌ Version mismatch! Tag ($tag_version) does not match .csproj ($csproj_version)"
+            echo "❌ Version mismatch! Tag ($tag_version) does not match $csproj_file ($csproj_version)"
             exit 1
           fi
 
