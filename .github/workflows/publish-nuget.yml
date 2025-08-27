@@ -28,8 +28,8 @@ jobs:
       # 🔎 Verify tag matches .csproj version
       - name: Verify tag matches .csproj version
         run: |
-          # Extract version from .csproj
-          csproj_version=$(xmllint --xpath "string(//Project/PropertyGroup/Version)" **/*.csproj)
+          # Find the first <Version> element in the .csproj
+          csproj_version=$(grep -oPm1 "(?<=<Version>)[^<]+" **/*.csproj)
 
           # Remove leading 'v' from the Git tag (e.g., v1.0.0 -> 1.0.0)
           tag_version="${GITHUB_REF_NAME#v}"
