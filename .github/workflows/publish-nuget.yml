@@ -7,7 +7,10 @@ on:
   workflow_dispatch: # runs manually
 
 env:
-  CSProj_File: ${{ vars.CSProj_File }} # repo-level variable
+  CSProj_File: ${{ vars.CSPROJ_FILE }} # repo-level variable
+  AWS_CodeArtifact_Domain: ${{ vars.AWS_CODEARTIFACT_DOMAIN }} # repo-level variable
+  AWS_CodeArtifact_DomainOwner: ${{ vars.AWS_CODEARTIFACT_DOMAINOWNER }} # repo-level variable
+  AWS_CodeArtifact_NugetSource: ${{ vars.AWS_CODEARTIFACT_NUGETSOURCE }} # repo-level variable
 
 jobs:
   build:
@@ -53,9 +56,6 @@ jobs:
 
           echo "✅ Version check passed"
           echo "TAG_VERSION=$tag_version" >> $GITHUB_ENV
-        env:
-          CSProj_File: ${{ vars.CSProj_File }}
-
 
       # 3️⃣ Restore dependencies
       - name: Restore
@@ -84,8 +84,8 @@ jobs:
       - name: Authenticate to CodeArtifact
         run: |
           export CODEARTIFACT_AUTH_TOKEN=$(aws codeartifact get-authorization-token \
-            --domain curtislawhorn-artifacts \
-            --domain-owner 689502032294 \
+            --domain $AWS_CodeArtifact_Domain \
+            --domain-owner $AWS_CODEARTFIACT_DOMAINOWNER \
             --query authorizationToken \
             --output text)
 
@@ -96,7 +96,7 @@ jobs:
             --username aws \
             --password $CODEARTIFACT_AUTH_TOKEN \
             --store-password-in-clear-text \
-            "https://curtislawhorn-artifacts-689502032294.d.codeartifact.us-east-2.amazonaws.com/nuget/CurtisLawhorn/v3/index.json"
+            "$AWS_CodeArtifact_NugetSource"
 
       # 9️⃣ Push NuGet package to CodeArtifact
       - name: Push package to CodeArtifact
