@@ -37,8 +37,8 @@ jobs:
             exit 1
           fi
 
-          # Extract version from .csproj (<PackageVersion> or <Version>)
-          csproj_version=$(grep -oPm1 "(?<=<(PackageVersion|Version)>)[^<]+" "$CSProj_File")
+          # Extract version from .csproj
+          csproj_version=$(grep -oPm1 "<(PackageVersion|Version)>([^<]+)</\1>" "$CSProj_File" | sed -E "s/<(PackageVersion|Version)>([^<]+)<\/\1>/\2/")
 
           # Remove leading "v" from tag
           tag_version="${GITHUB_REF_NAME#v}"
@@ -53,6 +53,9 @@ jobs:
 
           echo "✅ Version check passed"
           echo "TAG_VERSION=$tag_version" >> $GITHUB_ENV
+        env:
+          CSProj_File: ${{ vars.CSProj_File }}
+
 
       # 3️⃣ Restore dependencies
       - name: Restore
