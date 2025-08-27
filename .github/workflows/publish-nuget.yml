@@ -79,8 +79,8 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: "$AWS_Role"
-          aws-region: "$AWS_Region"
+          role-to-assume: ${{ env.AWS_Role }}
+          aws-region: ${{ env.AWS_Region }}
 
       # 8️⃣ Authenticate to CodeArtifact
       - name: Authenticate to CodeArtifact
