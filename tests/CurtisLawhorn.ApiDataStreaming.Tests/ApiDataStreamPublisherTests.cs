@@ -1,5 +1,4 @@
-﻿using Xunit;
-using CurtisLawhorn.ApiDataStreaming;
+﻿using CurtisLawhorn.ApiDataStreaming;
 using CurtisLawhorn.ApiDataStreaming.Configuration;
 using Amazon.Kinesis;
 using Amazon.Kinesis.Model;
@@ -7,169 +6,228 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Moq;
 using System.Text;
+using System.Text.Json;
+using Xunit;
 
-namespace CurtisLawhorn.ApiDataStreaming.Tests;
-
-public class ApiDataStreamingPublisherTests 
+namespace CurtisLawhorn.ApiDataStreaming.Tests
 {
-    private readonly Mock<RequestDelegate> _nextMock;
-    private readonly Mock<ILogger<ApiDataStreamPublisher>> _loggerMock;
-    private readonly ApiDataStreamingConfiguration _config;
-    private readonly Mock<IAmazonKinesis> _kinesisMock;
-    private readonly ApiDataStreamPublisher _publisher;
-
-    public ApiDataStreamingPublisherTests()
+    public class ApiDataStreamPublisherTests
     {
-        _nextMock = new Mock<RequestDelegate>();
-        _loggerMock = new Mock<ILogger<ApiDataStreamPublisher>>();
-        _config = new ApiDataStreamingConfiguration { StreamName = "TestStream" };
-        _kinesisMock = new Mock<IAmazonKinesis>();
-        _publisher = new ApiDataStreamPublisher(
-            _nextMock.Object,
-            _loggerMock.Object,
-            _config,
-            _kinesisMock.Object
-        );
-    }
+        private readonly Mock<RequestDelegate> _nextMock;
+        private readonly Mock<ILogger<ApiDataStreamPublisher>> _loggerMock;
+        private readonly ApiDataStreamingConfiguration _config;
+        private readonly Mock<IAmazonKinesis> _kinesisMock;
+        private readonly ApiDataStreamPublisher _publisher;
 
-    [Fact]
-    public async Task InvokeAsync_CallsNextDelegateAndStreamsToKinesis()
-    {
-        // Arrange
-        var context = new DefaultHttpContext();
-        context.Request.Method = "GET";
-        context.Request.Path = "/test";
-        context.Response.Body = new MemoryStream();
-        context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes("request-body"));
+        public ApiDataStreamPublisherTests()
+        {
+            _nextMock = new Mock<RequestDelegate>();
+            _loggerMock = new Mock<ILogger<ApiDataStreamPublisher>>();
+            _config = new ApiDataStreamingConfiguration { StreamName = "TestStream" };
+            _kinesisMock = new Mock<IAmazonKinesis>();
+            _publisher = new ApiDataStreamPublisher(
+                _nextMock.Object,
+                _loggerMock.Object,
+                _config,
+                _kinesisMock.Object
+            );
+        }
 
-        _nextMock.Setup(n => n(It.IsAny<HttpContext>())).Returns(Task.CompletedTask);
+        [Fact]
+        public async Task InvokeAsync_StreamsRequestAndResponseToKinesis()
+        {
+            // Arrange
+            var context = new DefaultHttpContext();
+            context.Request.Method = "GET";
+            context.Request.Path = "/test";
+            context.Request.QueryString = new QueryString("?foo=bar");
+            context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes("request-body"));
+            context.Response.Body = new MemoryStream();
 
-        _kinesisMock
-            .Setup(k => k.PutRecordAsync(It.IsAny<PutRecordRequest>(), default))
-            .ReturnsAsync(new PutRecordResponse());
+            _nextMock.Setup(n => n(It.IsAny<HttpContext>())).Returns(Task.CompletedTask);
 
-        // Act
-        await _publisher.InvokeAsync(context);
+            _kinesisMock
+                .Setup(k => k.PutRecordAsync(It.IsAny<PutRecordRequest>(), default))
+                .ReturnsAsync(new PutRecordResponse());
 
-        // Assert
-        _nextMock.Verify(n => n(It.IsAny<HttpContext>()), Times.Once);
-        _kinesisMock.Verify(k => k.PutRecordAsync(It.IsAny<PutRecordRequest>(), default), Times.Once);
-    }
+            // Act
+            await _publisher.InvokeAsync(context);
 
-    [Fact]
-    public async Task InvokeAsync_LogsErrorOnException()
-    {
-        // Arrange
-        var context = new DefaultHttpContext();
-        context.Request.Method = "POST";
-        context.Request.Path = "/error";
-        context.Response.Body = new MemoryStream();
-        context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes("request-body"));
+            // Assert
+            _kinesisMock.Verify(k => k.PutRecordAsync(
+                It.Is<PutRecordRequest>(r =>
+                    r.StreamName == "TestStream" &&
+                    r.Data.Length > 0 &&
+                    !string.IsNullOrEmpty(r.PartitionKey)
+                ),
+                default
+            ), Times.Once);
+        }
 
-        _nextMock.Setup(n => n(It.IsAny<HttpContext>())).Throws(new Exception("Test exception"));
+        [Fact]
+        public async Task InvokeAsync_WhenKinesisThrows_LogsError()
+        {
+            // Arrange
+            var context = new DefaultHttpContext();
+            context.Request.Method = "POST";
+            context.Request.Path = "/error";
+            context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes("body"));
+            context.Response.Body = new MemoryStream();
 
-        // Act
-        await _publisher.InvokeAsync(context);
+            _nextMock.Setup(n => n(It.IsAny<HttpContext>())).Returns(Task.CompletedTask);
 
-        // Assert
-        _loggerMock.Verify(
-            l => l.Log(
-                LogLevel.Error,
-                It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString().Contains("Failed to stream API data to Kinesis.")),
-                It.IsAny<Exception>(),
-                It.IsAny<Func<It.IsAnyType, Exception, string>>()),
-            Times.Once);
-    }
+            var exception = new Exception("Kinesis failure");
+            _kinesisMock
+                .Setup(k => k.PutRecordAsync(It.IsAny<PutRecordRequest>(), default))
+                .ThrowsAsync(exception);
 
-    [Fact]
-    public async Task StreamToKinesisAsync_SendsCorrectData()
-    {
-        // Arrange
-        var requestData = new { Method = "GET", Path = "/unit", Body = "body" };
-        var responseData = new { StatusCode = 200, Body = "response" };
+            // Act
+            await _publisher.InvokeAsync(context);
 
-        PutRecordRequest capturedRequest = null;
-        _kinesisMock
-            .Setup(k => k.PutRecordAsync(It.IsAny<PutRecordRequest>(), default))
-            .Callback<PutRecordRequest, System.Threading.CancellationToken>((req, _) => capturedRequest = req)
-            .ReturnsAsync(new PutRecordResponse());
+            // Assert
+            _loggerMock.Verify(
+                l => l.Log(
+                    LogLevel.Error,
+                    It.IsAny<EventId>(),
+                    It.IsAny<It.IsAnyType>(),
+                    exception,
+                    It.IsAny<Func<It.IsAnyType, Exception?, string>>()
+                ),
+                Times.Once
+            );
+        }
 
-        // Act
-        var streamToKinesisAsync = typeof(ApiDataStreamPublisher)
-            .GetMethod("StreamToKinesisAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        [Fact]
+        public async Task InvokeAsync_WithEmptyRequestBody_StreamsEmptyRequestBodyToKinesis()
+        {
+            // Arrange
+            var context = new DefaultHttpContext();
+            context.Request.Method = "POST";
+            context.Request.Path = "/empty";
+            context.Request.Body = new MemoryStream(); // Empty body
+            context.Response.Body = new MemoryStream();
 
-        await (Task)streamToKinesisAsync.Invoke(_publisher, new object[] { requestData, responseData });
+            _nextMock.Setup(n => n(It.IsAny<HttpContext>())).Returns(Task.CompletedTask);
 
-        // Assert
-        Assert.NotNull(capturedRequest);
-        Assert.Equal(_config.StreamName, capturedRequest.StreamName);
+            PutRecordRequest? capturedRequest = null;
+            _kinesisMock
+                .Setup(k => k.PutRecordAsync(It.IsAny<PutRecordRequest>(), default))
+                .Callback<PutRecordRequest, System.Threading.CancellationToken>((req, _) => capturedRequest = req)
+                .ReturnsAsync(new PutRecordResponse());
 
-        capturedRequest.Data.Seek(0, SeekOrigin.Begin);
-        var json = await new StreamReader(capturedRequest.Data).ReadToEndAsync();
-        Assert.Contains("\"Request\"", json);
-        Assert.Contains("\"Response\"", json);
-    }
+            // Act
+            await _publisher.InvokeAsync(context);
 
-    [Fact]
-    public async Task InvokeAsync_CapturesRequestHeaders()
-    {
-        // Arrange
-        var context = new DefaultHttpContext();
-        context.Request.Method = "GET";
-        context.Request.Path = "/header-test";
-        context.Response.Body = new MemoryStream();
-        context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes("body"));
-        context.Request.Headers["X-Test-Header"] = "HeaderValue";
+            // Assert
+            Assert.NotNull(capturedRequest);
+            var json = Encoding.UTF8.GetString(capturedRequest.Data.ToArray());
+            using var doc = JsonDocument.Parse(json);
+            var requestBody = doc.RootElement.GetProperty("Request").GetProperty("Body").GetString();
+            Assert.Equal(string.Empty, requestBody);
+        }
 
-        _nextMock.Setup(n => n(It.IsAny<HttpContext>())).Returns(Task.CompletedTask);
-        _kinesisMock
-            .Setup(k => k.PutRecordAsync(It.IsAny<PutRecordRequest>(), default))
-            .ReturnsAsync(new PutRecordResponse());
+        [Fact]
+        public async Task InvokeAsync_WithNon200ResponseStatusCode_StreamsResponseWithCorrectStatusCode()
+        {
+            // Arrange
+            var context = new DefaultHttpContext();
+            context.Request.Method = "GET";
+            context.Request.Path = "/notfound";
+            context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes("request"));
+            context.Response.Body = new MemoryStream();
 
-        PutRecordRequest capturedRequest = null;
-        _kinesisMock
-            .Setup(k => k.PutRecordAsync(It.IsAny<PutRecordRequest>(), default))
-            .Callback<PutRecordRequest, System.Threading.CancellationToken>((req, _) => capturedRequest = req)
-            .ReturnsAsync(new PutRecordResponse());
+            // Simulate a 404 response
+            context.Response.StatusCode = 404;
+            await context.Response.WriteAsync("Not Found");
 
-        // Act
-        await _publisher.InvokeAsync(context);
+            _nextMock.Setup(n => n(It.IsAny<HttpContext>())).Returns(Task.CompletedTask);
 
-        // Assert
-        Assert.NotNull(capturedRequest);
-        capturedRequest.Data.Seek(0, SeekOrigin.Begin);
-        var json = await new StreamReader(capturedRequest.Data).ReadToEndAsync();
-        Assert.Contains("\"X-Test-Header\":\"HeaderValue\"", json);
-    }
+            PutRecordRequest? capturedRequest = null;
+            _kinesisMock
+                .Setup(k => k.PutRecordAsync(It.IsAny<PutRecordRequest>(), default))
+                .Callback<PutRecordRequest, System.Threading.CancellationToken>((req, _) => capturedRequest = req)
+                .ReturnsAsync(new PutRecordResponse());
 
-    [Fact]
-    public async Task InvokeAsync_CapturesResponseHeaders()
-    {
-        // Arrange
-        var context = new DefaultHttpContext();
-        context.Request.Method = "GET";
-        context.Request.Path = "/header-test";
-        context.Response.Body = new MemoryStream();
-        context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes("body"));
+            // Act
+            await _publisher.InvokeAsync(context);
 
-        _nextMock.Setup(n => n(It.IsAny<HttpContext>()))
-            .Callback<HttpContext>(ctx => ctx.Response.Headers["X-Response-Header"] = "ResponseValue")
-            .Returns(Task.CompletedTask);
+            // Assert
+            Assert.NotNull(capturedRequest);
+            var json = Encoding.UTF8.GetString(capturedRequest.Data.ToArray());
+            using var doc = JsonDocument.Parse(json);
+            var responseStatus = doc.RootElement.GetProperty("Response").GetProperty("StatusCode").GetInt32();
+            var responseBody = doc.RootElement.GetProperty("Response").GetProperty("Body").GetString();
+            Assert.Equal(404, responseStatus);
 
-        PutRecordRequest capturedRequest = null;
-        _kinesisMock
-            .Setup(k => k.PutRecordAsync(It.IsAny<PutRecordRequest>(), default))
-            .Callback<PutRecordRequest, System.Threading.CancellationToken>((req, _) => capturedRequest = req)
-            .ReturnsAsync(new PutRecordResponse());
+        }
 
-        // Act
-        await _publisher.InvokeAsync(context);
+        [Fact]
+        public async Task InvokeAsync_StreamsRequestHeadersToKinesis()
+        {
+            // Arrange
+            var context = new DefaultHttpContext();
+            context.Request.Method = "GET";
+            context.Request.Path = "/headers";
+            context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes("body"));
+            context.Response.Body = new MemoryStream();
 
-        // Assert
-        Assert.NotNull(capturedRequest);
-        capturedRequest.Data.Seek(0, SeekOrigin.Begin);
-        var json = await new StreamReader(capturedRequest.Data).ReadToEndAsync();
-        Assert.Contains("\"X-Response-Header\":\"ResponseValue\"", json);
+            // Add custom headers
+            context.Request.Headers["X-Test-Header"] = "HeaderValue";
+            context.Request.Headers["Another-Header"] = "AnotherValue";
+
+            _nextMock.Setup(n => n(It.IsAny<HttpContext>())).Returns(Task.CompletedTask);
+
+            PutRecordRequest? capturedRequest = null;
+            _kinesisMock
+                .Setup(k => k.PutRecordAsync(It.IsAny<PutRecordRequest>(), default))
+                .Callback<PutRecordRequest, System.Threading.CancellationToken>((req, _) => capturedRequest = req)
+                .ReturnsAsync(new PutRecordResponse());
+
+            // Act
+            await _publisher.InvokeAsync(context);
+
+            // Assert
+            Assert.NotNull(capturedRequest);
+            var json = Encoding.UTF8.GetString(capturedRequest.Data.ToArray());
+            using var doc = JsonDocument.Parse(json);
+            var headers = doc.RootElement.GetProperty("Request").GetProperty("Headers");
+            Assert.Equal("HeaderValue", headers.GetProperty("X-Test-Header").GetString());
+            Assert.Equal("AnotherValue", headers.GetProperty("Another-Header").GetString());
+        }
+
+        [Fact]
+        public async Task InvokeAsync_StreamsResponseHeadersToKinesis()
+        {
+            // Arrange
+            var context = new DefaultHttpContext();
+            context.Request.Method = "GET";
+            context.Request.Path = "/response-headers";
+            context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes("body"));
+            context.Response.Body = new MemoryStream();
+
+            // Add custom response headers
+            context.Response.Headers["X-Response-Header"] = "ResponseValue";
+            context.Response.Headers["Another-Response"] = "AnotherValue";
+
+            _nextMock.Setup(n => n(It.IsAny<HttpContext>())).Returns(Task.CompletedTask);
+
+            PutRecordRequest? capturedRequest = null;
+            _kinesisMock
+                .Setup(k => k.PutRecordAsync(It.IsAny<PutRecordRequest>(), default))
+                .Callback<PutRecordRequest, System.Threading.CancellationToken>((req, _) => capturedRequest = req)
+                .ReturnsAsync(new PutRecordResponse());
+
+            // Act
+            await _publisher.InvokeAsync(context);
+
+            // Assert
+            Assert.NotNull(capturedRequest);
+            var json = Encoding.UTF8.GetString(capturedRequest.Data.ToArray());
+            using var doc = JsonDocument.Parse(json);
+            var headers = doc.RootElement.GetProperty("Response").GetProperty("Headers");
+            Assert.Equal("ResponseValue", headers.GetProperty("X-Response-Header").GetString());
+            Assert.Equal("AnotherValue", headers.GetProperty("Another-Response").GetString());
+        }
+
     }
 }
