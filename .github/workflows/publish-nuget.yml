@@ -6,14 +6,6 @@ on:
       - 'v*' # runs only when tags like v1.0.1, v2.1.3 are pushed
   workflow_dispatch: # runs manually
 
-env: # repo-level variables
-  CSProj_File: ${{ vars.CSPROJ_FILE }}
-  AWS_Region: ${{ vars.AWS_REGION }}
-  AWS_Role: ${{ vars.AWS_ROLE }}
-  AWS_CodeArtifact_Domain: ${{ vars.AWS_CODEARTIFACT_DOMAIN }}
-  AWS_CodeArtifact_DomainOwner: ${{ vars.AWS_CODEARTIFACT_DOMAINOWNER }}
-  AWS_CodeArtifact_NugetSource: ${{ vars.AWS_CODEARTIFACT_NUGETSOURCE }}
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -36,6 +28,8 @@ jobs:
       # 🔎 Verify tag matches .csproj version
       - name: Verify tag matches version in .csproj
         shell: bash
+        env:
+          CSProj_File: ${{ vars.CSPROJ_FILE }}
         run: |
           if [ ! -f "$CSProj_File" ]; then
             echo "❌ $CSProj_File not found!"
@@ -69,7 +63,42 @@ jobs:
 
       # 5️⃣ Run tests
       - name: Test
-        run: dotnet test --configuration Release --no-build --verbosity normal
+        run: dotnet test --configuration Release --no-build --verbosity normal --collect:"XPlat Code Coverage"
+
+      # ✅ Enforce minimum code and branch coverage (threshold from env)
+      - name: Enforce minimum code and branch coverage
+        shell: bash
+        env:
+          Test_Coverage: ${{ vars.TEST_COVERAGE }}
+        run: |
+          coverage_file=$(find . -type f -name 'coverage.cobertura.xml' | head -n 1)
+          if [ -z "$coverage_file" ]; then
+            echo "❌ Coverage file not found!"
+            exit 1
+          fi
+
+          # Extract line-rate and branch-rate from Cobertura XML
+          line_rate=$(grep -o 'line-rate="[0-9.]*"' "$coverage_file" | head -n 1 | sed 's/line-rate="//;s/"//')
+          branch_rate=$(grep -o 'branch-rate="[0-9.]*"' "$coverage_file" | head -n 1 | sed 's/branch-rate="//;s/"//')
+          coverage_percent=$(awk "BEGIN {print $line_rate * 100}")
+          branch_percent=$(awk "BEGIN {print $branch_rate * 100}")
+
+          echo "Line coverage: $coverage_percent%"
+          echo "Branch coverage: $branch_percent%"
+          echo "Required minimum: ${Test_Coverage}%"
+
+          # Fail if either coverage is less than threshold
+          if (( $(echo "$coverage_percent < $Test_Coverage" | bc -l) )); then
+            echo "❌ Line coverage ($coverage_percent%) is below ${Test_Coverage}%!"
+            exit 1
+          fi
+
+          if (( $(echo "$branch_percent < $Test_Coverage" | bc -l) )); then
+            echo "❌ Branch coverage ($branch_percent%) is below ${Test_Coverage}%!"
+            exit 1
+          fi
+
+          echo "✅ Code coverage ($coverage_percent%) and branch coverage ($branch_percent%) meet minimum requirement."
 
       # 6️⃣ Pack NuGet package (forces .csproj version for consistency)
       - name: Pack NuGet
@@ -77,6 +106,9 @@ jobs:
 
       # 7️⃣ Configure AWS credentials using OIDC role
       - name: Configure AWS credentials
+        env:
+          AWS_Region: ${{ vars.AWS_REGION }}
+          AWS_Role: ${{ vars.AWS_ROLE }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.AWS_Role }}
@@ -84,6 +116,10 @@ jobs:
 
       # 8️⃣ Authenticate to CodeArtifact
       - name: Authenticate to CodeArtifact
+        env: # repo-level variables
+          AWS_CodeArtifact_Domain: ${{ vars.AWS_CODEARTIFACT_DOMAIN }}
+          AWS_CodeArtifact_DomainOwner: ${{ vars.AWS_CODEARTIFACT_DOMAINOWNER }}
+          AWS_CodeArtifact_NugetSource: ${{ vars.AWS_CODEARTIFACT_NUGETSOURCE }}
         run: |
           export CODEARTIFACT_AUTH_TOKEN=$(aws codeartifact get-authorization-token \
             --domain "$AWS_CodeArtifact_Domain" \
