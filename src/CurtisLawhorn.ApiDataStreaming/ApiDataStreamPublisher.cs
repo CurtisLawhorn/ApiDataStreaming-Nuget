@@ -43,7 +43,7 @@ public class ApiDataStreamPublisher
 
             await responseBodyStream.CopyToAsync(originalBodyStream);
 
-            await StreamToKinesisAsync(requestData, responseData);
+            _ = Task.Run(() => StreamToKinesisAsync(requestData, responseData));
 
         }
 
@@ -85,7 +85,7 @@ public class ApiDataStreamPublisher
         };
     }
 
-    private async Task StreamToKinesisAsync(object requestData, object responseData)
+    private void StreamToKinesisAsync(object requestData, object responseData)
     {
         var apiData = new { Request = requestData, Response = responseData };
         var json = JsonSerializer.Serialize(apiData);
@@ -98,7 +98,14 @@ public class ApiDataStreamPublisher
             PartitionKey = Guid.NewGuid().ToString()
         };
 
-        await _amazonKinesis.PutRecordAsync(request);
+        // Fire-and-forget: do not await, log any exceptions
+        _ = _amazonKinesis.PutRecordAsync(request).ContinueWith(task =>
+        {
+            if (task.Exception != null)
+            {
+                _logger.LogError(task.Exception, "Failed to put record to Kinesis.");
+            }
+        }, TaskContinuationOptions.OnlyOnFaulted);
     }
 
 }
