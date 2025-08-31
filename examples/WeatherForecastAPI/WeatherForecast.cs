@@ -1,5 +1,8 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace WeatherForecastAPI;
 
+[ExcludeFromCodeCoverage]
 public class WeatherForecast
 {
     public DateOnly Date { get; set; }

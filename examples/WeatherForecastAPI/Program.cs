@@ -1,7 +1,9 @@
+using System.Diagnostics.CodeAnalysis;
 using CurtisLawhorn.ApiDataStreaming.Configuration;
 
 namespace WeatherForecastAPI;
 
+[ExcludeFromCodeCoverage]
 public class Program
 {
     public static void Main(string[] args)
