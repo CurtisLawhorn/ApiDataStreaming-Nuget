@@ -272,5 +272,49 @@ namespace CurtisLawhorn.ApiDataStreaming.Tests
             Assert.Equal("AnotherValue", headers.GetProperty("Another-Response").GetString());
         }
 
+        [Fact]
+        public async Task InvokeAsync_WhenExceptionThrown_LogsError()
+        {
+            // Arrange
+            var context = new DefaultHttpContext();
+            context.Request.Method = "GET";
+            context.Request.Path = "/error";
+            context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes("body"));
+            context.Response.Body = new MemoryStream();
+
+            // Simulate an exception thrown by the next middleware
+            var testException = new Exception("Test exception");
+            _nextMock.Setup(n => n(It.IsAny<HttpContext>())).ThrowsAsync(testException);
+
+            // Track logger invocation
+            var tcs = new TaskCompletionSource<bool>();
+            _loggerMock
+                .Setup(l => l.Log(
+                    LogLevel.Error,
+                    It.IsAny<EventId>(),
+                    It.IsAny<It.IsAnyType>(),
+                    testException,
+                    It.IsAny<Func<It.IsAnyType, Exception?, string>>()
+                ))
+                .Callback(() => tcs.TrySetResult(true));
+
+            // Act
+            await _publisher.InvokeAsync(context);
+            var loggerCalled = await Task.WhenAny(tcs.Task, Task.Delay(2000)) == tcs.Task;
+            Assert.True(loggerCalled, "Logger was not called within timeout.");
+
+            // Assert
+            _loggerMock.Verify(
+                l => l.Log(
+                    LogLevel.Error,
+                    It.IsAny<EventId>(),
+                    It.IsAny<It.IsAnyType>(),
+                    testException,
+                    It.IsAny<Func<It.IsAnyType, Exception?, string>>()
+                ),
+                Times.Once
+            );
+        }
+
     }
 }
