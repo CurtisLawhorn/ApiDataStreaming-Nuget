@@ -46,12 +46,15 @@ namespace CurtisLawhorn.ApiDataStreaming.Tests
 
             _nextMock.Setup(n => n(It.IsAny<HttpContext>())).Returns(Task.CompletedTask);
 
+            var tcs = new TaskCompletionSource<bool>();
             _kinesisMock
                 .Setup(k => k.PutRecordAsync(It.IsAny<PutRecordRequest>(), default))
+                .Callback(() => tcs.SetResult(true))
                 .ReturnsAsync(new PutRecordResponse());
 
             // Act
             await _publisher.InvokeAsync(context);
+            await tcs.Task; // Wait for fire-and-forget to complete
 
             // Assert
             _kinesisMock.Verify(k => k.PutRecordAsync(
@@ -77,12 +80,30 @@ namespace CurtisLawhorn.ApiDataStreaming.Tests
             _nextMock.Setup(n => n(It.IsAny<HttpContext>())).Returns(Task.CompletedTask);
 
             var exception = new Exception("Kinesis failure");
+            var tcs = new TaskCompletionSource<bool>();
+
+            // Return a faulted Task to trigger the ContinueWith in the middleware
             _kinesisMock
-                .Setup(k => k.PutRecordAsync(It.IsAny<PutRecordRequest>(), default))
-                .ThrowsAsync(exception);
+                .Setup(k => k.PutRecordAsync(It.IsAny<PutRecordRequest>(), It.IsAny<System.Threading.CancellationToken>()))
+                .Returns(() => Task.FromException<PutRecordResponse>(exception));
+
+            // Accept any exception in the logger mock
+            _loggerMock
+                .Setup(l => l.Log(
+                    LogLevel.Error,
+                    It.IsAny<EventId>(),
+                    It.IsAny<It.IsAnyType>(),
+                    It.IsAny<Exception>(),
+                    It.IsAny<Func<It.IsAnyType, Exception?, string>>()
+                ))
+                .Callback(() => tcs.TrySetResult(true));
 
             // Act
             await _publisher.InvokeAsync(context);
+
+            // Wait for logger to be called after fire-and-forget, with timeout
+            var loggerCalled = await Task.WhenAny(tcs.Task, Task.Delay(5000)) == tcs.Task;
+            Assert.True(loggerCalled, "Logger was not called within timeout.");
 
             // Assert
             _loggerMock.Verify(
@@ -90,7 +111,7 @@ namespace CurtisLawhorn.ApiDataStreaming.Tests
                     LogLevel.Error,
                     It.IsAny<EventId>(),
                     It.IsAny<It.IsAnyType>(),
-                    exception,
+                    It.IsAny<Exception>(),
                     It.IsAny<Func<It.IsAnyType, Exception?, string>>()
                 ),
                 Times.Once
@@ -109,14 +130,19 @@ namespace CurtisLawhorn.ApiDataStreaming.Tests
 
             _nextMock.Setup(n => n(It.IsAny<HttpContext>())).Returns(Task.CompletedTask);
 
+            var tcs = new TaskCompletionSource<bool>();
             PutRecordRequest? capturedRequest = null;
             _kinesisMock
                 .Setup(k => k.PutRecordAsync(It.IsAny<PutRecordRequest>(), default))
-                .Callback<PutRecordRequest, System.Threading.CancellationToken>((req, _) => capturedRequest = req)
+                .Callback<PutRecordRequest, System.Threading.CancellationToken>((req, _) => {
+                    capturedRequest = req;
+                    tcs.SetResult(true);
+                })
                 .ReturnsAsync(new PutRecordResponse());
 
             // Act
             await _publisher.InvokeAsync(context);
+            await tcs.Task; // Wait for fire-and-forget to complete
 
             // Assert
             Assert.NotNull(capturedRequest);
@@ -136,20 +162,27 @@ namespace CurtisLawhorn.ApiDataStreaming.Tests
             context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes("request"));
             context.Response.Body = new MemoryStream();
 
-            // Simulate a 404 response
-            context.Response.StatusCode = 404;
-            await context.Response.WriteAsync("Not Found");
+            // Simulate a 404 response inside the pipeline
+            _nextMock.Setup(n => n(It.IsAny<HttpContext>()))
+                .Returns<HttpContext>(async ctx =>
+                {
+                    ctx.Response.StatusCode = 404;
+                    await ctx.Response.WriteAsync("Not Found");
+                });
 
-            _nextMock.Setup(n => n(It.IsAny<HttpContext>())).Returns(Task.CompletedTask);
-
+            var tcs = new TaskCompletionSource<bool>();
             PutRecordRequest? capturedRequest = null;
             _kinesisMock
                 .Setup(k => k.PutRecordAsync(It.IsAny<PutRecordRequest>(), default))
-                .Callback<PutRecordRequest, System.Threading.CancellationToken>((req, _) => capturedRequest = req)
+                .Callback<PutRecordRequest, System.Threading.CancellationToken>((req, _) => {
+                    capturedRequest = req;
+                    tcs.SetResult(true);
+                })
                 .ReturnsAsync(new PutRecordResponse());
 
             // Act
             await _publisher.InvokeAsync(context);
+            await tcs.Task;
 
             // Assert
             Assert.NotNull(capturedRequest);
@@ -158,7 +191,7 @@ namespace CurtisLawhorn.ApiDataStreaming.Tests
             var responseStatus = doc.RootElement.GetProperty("Response").GetProperty("StatusCode").GetInt32();
             var responseBody = doc.RootElement.GetProperty("Response").GetProperty("Body").GetString();
             Assert.Equal(404, responseStatus);
-
+            Assert.Equal("Not Found", responseBody);
         }
 
         [Fact]
@@ -177,14 +210,19 @@ namespace CurtisLawhorn.ApiDataStreaming.Tests
 
             _nextMock.Setup(n => n(It.IsAny<HttpContext>())).Returns(Task.CompletedTask);
 
+            var tcs = new TaskCompletionSource<bool>();
             PutRecordRequest? capturedRequest = null;
             _kinesisMock
-                .Setup(k => k.PutRecordAsync(It.IsAny<PutRecordRequest>(), default))
-                .Callback<PutRecordRequest, System.Threading.CancellationToken>((req, _) => capturedRequest = req)
+                .Setup(k => k.PutRecordAsync(It.IsAny<PutRecordRequest>(), It.IsAny<System.Threading.CancellationToken>()))
+                .Callback<PutRecordRequest, System.Threading.CancellationToken>((req, _) => {
+                    capturedRequest = req;
+                    tcs.TrySetResult(true);
+                })
                 .ReturnsAsync(new PutRecordResponse());
 
             // Act
             await _publisher.InvokeAsync(context);
+            await tcs.Task; // Wait for fire-and-forget to complete
 
             // Assert
             Assert.NotNull(capturedRequest);
@@ -211,14 +249,19 @@ namespace CurtisLawhorn.ApiDataStreaming.Tests
 
             _nextMock.Setup(n => n(It.IsAny<HttpContext>())).Returns(Task.CompletedTask);
 
+            var tcs = new TaskCompletionSource<bool>();
             PutRecordRequest? capturedRequest = null;
             _kinesisMock
                 .Setup(k => k.PutRecordAsync(It.IsAny<PutRecordRequest>(), default))
-                .Callback<PutRecordRequest, System.Threading.CancellationToken>((req, _) => capturedRequest = req)
+                .Callback<PutRecordRequest, System.Threading.CancellationToken>((req, _) => {
+                    capturedRequest = req;
+                    tcs.SetResult(true);
+                })
                 .ReturnsAsync(new PutRecordResponse());
 
             // Act
             await _publisher.InvokeAsync(context);
+            await tcs.Task; // Wait for fire-and-forget to complete
 
             // Assert
             Assert.NotNull(capturedRequest);
