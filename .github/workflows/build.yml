@@ -1,4 +1,4 @@
-name: Build & Publish NuGet Package to AWS CodeArtifact
+name: Build and Publish # Build and publish NuGet Package to AWS CodeArtifact
 
 on:
   push:
